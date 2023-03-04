@@ -175,7 +175,7 @@ Token *tokenize(const char *pch){
 							wrong_format_exponential = 0;
 						}
 						text2 = extract(start,pch);
-					}
+					} else wrong_format_exponential = 0;
 				} else 
 					wrong_format_exponential = 0;
 				if (isDouble) {
