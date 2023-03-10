@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-
 #include "utils.h"
 
 void err(const char *fmt,...){
+	freeDinamicallyAllocatedElements();
 	fprintf(stderr,"error: ");
 	va_list va;
 	va_start(va,fmt);
@@ -17,8 +17,11 @@ void err(const char *fmt,...){
 void *safeAlloc(size_t nBytes){
 	void *p=malloc(nBytes);
 	if(!p)err("not enough memory");
+	if (dinamicallyAllocatedElementsCount % 100 == 0)
+		dinamicallyAllocatedElements = (void**)realloc(dinamicallyAllocatedElements, (dinamicallyAllocatedElementsCount + 100) * sizeof(void*));
+	dinamicallyAllocatedElements[dinamicallyAllocatedElementsCount++]=p;
 	return p;
-	}
+}
 
 char *loadFile(const char *fileName){
 	FILE *fis=fopen(fileName,"rb");
@@ -33,3 +36,11 @@ char *loadFile(const char *fileName){
 	buf[n]='\0';
 	return buf;
 	}
+
+void freeDinamicallyAllocatedElements(){
+	for(int i=0;i<dinamicallyAllocatedElementsCount;i++){
+		free(dinamicallyAllocatedElements[i]);
+		}
+	free(dinamicallyAllocatedElements);
+	}
+

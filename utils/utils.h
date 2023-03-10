@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdnoreturn.h>
 
+void** dinamicallyAllocatedElements;
+int dinamicallyAllocatedElementsCount;
+
 // prints to stderr a message prefixed with "error: " and exit the program
 // the arguments are the same as for printf
 noreturn void err(const char *fmt,...);
@@ -17,3 +20,5 @@ void *safeAlloc(size_t nBytes);
 // on error, prints a message and exit the program
 char *loadFile(const char *fileName);
 
+// frees all dinamically allocated elements
+void freeDinamicallyAllocatedElements();

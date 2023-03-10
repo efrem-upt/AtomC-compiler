@@ -13,6 +13,7 @@ int line=1;		// the current line in the input file
 
 // adds a token to the end of the tokens list and returns it
 // sets its code and line
+
 Token *addTk(int code){
 	Token *tk=safeAlloc(sizeof(Token));
 	tk->code=code;
@@ -115,6 +116,15 @@ Token *tokenize(const char *pch){
 					pch++;
 					}
 				break;
+			case '>':
+				if(pch[1]=='='){
+					addTk(GREATEREQ);
+					pch+=2;
+					}else{
+					addTk(GREATER);
+					pch++;
+					}
+				break;
 			default: // treating undefined situation for atoms that are composed of interval of characters
 				if(isalpha(*pch)||*pch=='_'){
 					for(start=pch++;isalnum(*pch)||*pch=='_';pch++){}
@@ -145,14 +155,13 @@ Token *tokenize(const char *pch){
 				pch++;
 			} // check if it's CHAR
 			else if (*pch == '\'') {
-				if (pch[2] != '\'') {
-					for(start=++pch;*pch != '\'' && *pch!='\r'&&*pch!='\n'&&*pch!='\0';pch++) {}
-					char* text = extract(start, pch);
-					err("invalid char: %s at line %d", text, line);
+				if (pch[1] != '\'' && pch[2] == '\'')  {
+					tk = addTk(CHAR);
+					tk->c = pch[1];
+					pch += 3;
+				} else {
+					err("invalid char constant at line %d", line);
 				}
-				tk = addTk(CHAR);
-				tk->c = pch[1];
-				pch += 3;
 			} 
 			// check if it's INT or DOUBLE
 			else if (isdigit(*pch)) {
@@ -166,16 +175,16 @@ Token *tokenize(const char *pch){
 						else if (*pch == 'e' || *pch == 'E') nrAppearencesElements[1]++;
 					}
 				}
-				char *text = extract(start, pch); // extract the integer or double value until e or E (including e or E)
-				char *text2 = NULL; // extract the value after e or E
+				char *text = extract(start, pch); // extract the integer or double value until e or E (including e or E) if + and - are not used
+				char *text2 = NULL; // extract the value after e or E if + and - are used
 				int wrong_format_exponential = 1;
-				if (*pch == '+' || *pch == '-') {
+				if (*pch == '+' || *pch == '-') { // if the extraction stops at + or - we extract it separately in text2
 					if (pch[-1] == 'e' || pch[-1] == 'E') {
 						for (start=pch++; isdigit(*pch); pch++) {
 							wrong_format_exponential = 0;
 						}
 						text2 = extract(start,pch);
-					} else wrong_format_exponential = 0;
+					} else wrong_format_exponential = 0; 
 				} else 
 					wrong_format_exponential = 0;
 				if (isDouble) {
@@ -183,8 +192,6 @@ Token *tokenize(const char *pch){
 						char *text3 = (char*)safeAlloc(strlen(text) + strlen(text2) + 1);
 						strcpy(text3, text);
 						strcat(text3, text2);
-						free(text);
-						free(text2);
 						text = text3;
 					}
 					if (nrAppearencesElements[0] > 1 || nrAppearencesElements[1] > 1
