@@ -46,13 +46,13 @@ bool exprPrimary() {
 				while(consume(COMMA)){
 					if(expr()){
 						continue;
-						}
+						} else tkerr("Missing function argument after ,");
 					iTk = start;
 					return false;
 					}
 				if(consume(RPAR)){
 					return true;
-					}
+					} else tkerr("Missing ) to end function call");
 				}
 			}
 		return true;
@@ -65,7 +65,7 @@ bool exprPrimary() {
 		if(expr()){
 			if(consume(RPAR)){
 				return true;
-				}
+				} else tkerr("Missing ) after expression");
 			}
 		}
 	iTk = start;
@@ -84,7 +84,7 @@ bool exprPostfixPrim() {
 				if(exprPostfixPrim()){
 					return true;
 					}
-				}
+				} else tkerr("Missing ] after expression");
 			}
 		}
 	iTk = start;
@@ -93,7 +93,7 @@ bool exprPostfixPrim() {
 			if(exprPostfixPrim()){
 				return true;
 				}
-			}
+			} else tkerr("Missing struct attribute after .");
 		}
 	return true;
 }
@@ -118,6 +118,9 @@ bool exprUnary() {
 	if(consume(SUB) || consume(NOT)){
 		if(exprUnary()){
 			return true;
+			} else {
+				iTk = start;
+				if (consume(NOT)) tkerr("Missing expression after !");
 			}
 		}
 	iTk = start;
@@ -139,8 +142,8 @@ bool exprCast() {
 				if(consume(RPAR)){
 					if(exprCast()){
 						return true;
-						}
-					}
+						} else tkerr("Missing expression after cast");
+					} else tkerr("Missing ) after type");
 			}
 		}
 	iTk = start;
@@ -162,6 +165,10 @@ bool exprMulPrim() {
 			if(exprMulPrim()){
 				return true;
 				}
+			} else {
+				iTk = start;
+				if (consume(MUL)) tkerr("Missing expression after *");
+				else if (consume(DIV)) tkerr("Missing expression after /");
 			}
 		}
 	iTk = start;
@@ -191,6 +198,10 @@ bool exprAddPrim() {
 			if(exprAddPrim()){
 				return true;
 				}
+			} else {
+				iTk = start;
+				if (consume(ADD)) tkerr("Missing expression after +");
+				else if (consume(SUB)) tkerr("Missing expression after -");
 			}
 		}
 	iTk = start;
@@ -220,6 +231,12 @@ bool exprRelPrim() {
 			if(exprRelPrim()){
 				return true;
 				}
+			} else {
+				iTk = start;
+				if (consume(LESS)) tkerr("Missing expression after <");
+				else if (consume(LESSEQ)) tkerr("Missing expression after <=");
+				else if (consume(GREATER)) tkerr("Missing expression after >");
+				else if (consume(GREATEREQ)) tkerr("Missing expression after >=");
 			}
 		}
 	iTk = start;
@@ -250,7 +267,7 @@ bool exprEqPrim() {
 			if(exprEqPrim()){
 				return true;
 				}
-			}
+			} else tkerr("Missing expression after == or !=");
 		}
 	iTk = start;
 	return true;
@@ -280,7 +297,7 @@ bool exprAndPrim() {
 			if(exprAndPrim()){
 				return true;
 				}
-			}
+			} else tkerr("Missing expression after &&");
 		}
 	iTk = start;
 	return true;
@@ -309,7 +326,7 @@ bool exprOrPrim() {
 			if(exprOrPrim()){
 				return true;
 				}
-			}
+			} else tkerr("Missing expression after ||");
 		}
 	iTk = start;
 	return true;
@@ -336,7 +353,7 @@ bool exprAssign(){
 		if(consume(ASSIGN)){
 			if(exprAssign()){
 				return true;
-				}
+				} else tkerr("Missing expression after =");
 			}
 		}
 	iTk = start;
@@ -368,7 +385,7 @@ bool stmCompound(){
 		while(varDef() || stm());
 		if(consume(RACC)){
 			return true;
-			}
+			} else tkerr("Syntax error in started code block");
 		}
 	iTk = start;
 	return false;
@@ -394,10 +411,10 @@ bool stm(){
 							}else{
 								return true;
 								}
-						}
-					}
-				}
-			}
+						} else tkerr("Missing statement in if");
+					} else tkerr("Missing ) after expression in if");
+				} else tkerr("Missing condition in if");
+			} else tkerr("Missing ( after if");
 		}
 	iTk = start;
 	if(consume(WHILE)){
@@ -406,23 +423,28 @@ bool stm(){
 				if(consume(RPAR)){
 					if(stm()){
 						return true;
-						}
-					}
-				}
-			}
+						} else tkerr("Missing statement in while");
+					} else tkerr("Missing ) after expression in while");
+				} else tkerr("Missing expression in while");
+			} else tkerr("Missing ( after while");
 		}
 	iTk = start;
 	if(consume(RETURN)){
 		expr();
 		if(consume(SEMICOLON)){
 			return true;
-			}
+			} else tkerr("Missing ; after return");
 		}
 	iTk = start;
-	expr();
+	if (expr()) {
+		if (consume(SEMICOLON)) {
+			return true;
+			} else tkerr("Missing ; after expression");
+		}
+	iTk = start;
 	if(consume(SEMICOLON)){
 		return true;
-		}
+		} 
 	return false;
 	}
 
@@ -455,7 +477,7 @@ bool fnDef(){
 							if (consume(COMMA)) {
 								if (fnParam()) {
 									continue;
-								}
+								} else tkerr("Missing function parameter after comma");
 							}
 							break;
 						}
@@ -463,9 +485,9 @@ bool fnDef(){
 				if(consume(RPAR)){
 					if(stmCompound()){
 						return true;
-						}
-					}
-				}
+						} else tkerr("Missing function body");
+					} else tkerr("Missing ) after function parameters");
+				} 
 			}
 		}
 	iTk=start;
@@ -482,7 +504,7 @@ bool arrayDecl(){
 		if(consume(INT)){}
 		if(consume(RBRACKET)){
 			return true;
-			}
+			} else tkerr("Missing ] after array declaration");
 		}
 	iTk=start;
 	return false;
@@ -520,7 +542,7 @@ bool varDef(){
 			if(arrayDecl()){}
 			if(consume(SEMICOLON)){
 				return true;
-				}
+				} else tkerr("Missing ; after variable declaration");
 			}
 		}
 	iTk=start;
@@ -542,10 +564,10 @@ bool structDef(){
 				if(consume(RACC)){
 					if(consume(SEMICOLON)){
 						return true;
-						}
-					}
+						} else tkerr("Missing ; after struct");
+					} else tkerr("Missing } after struct");
 				}
-			}
+			} else tkerr("Missing struct name");
 		}
 	iTk=start;
 	return false;
