@@ -18,7 +18,7 @@ bool exprAnd();
 bool exprOr();
 bool exprAssign();
 bool expr();
-bool stmCompound();
+bool stmCompound(bool);
 bool stm();
 bool fnParam();
 bool fnDef();
