@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include "ad.h"
+#include "at.h"
 
 Token *iTk;		// the iterator in the tokens list
 Token *consumedTk;		// the last consumed token
@@ -37,35 +38,66 @@ bool consume(int code){
 
 // exprPrimary: ID ( LPAR ( expr ( COMMA expr )* )? RPAR )? | INT | DOUBLE | CHAR | STRING | LPAR expr RPAR
 
-bool exprPrimary() {
+bool exprPrimary(Ret* r) {
 	printf("#exprPrimary %s\n",tkCode(iTk->code));
 	Token* start = iTk;
 	if(consume(ID)){
+		Token* tkName = consumedTk;
+		Symbol *s=findSymbol(tkName->text);
+		if(!s)tkerr("undefined id: %s",tkName->text);
 		if(consume(LPAR)){
+			if(s->kind!=SK_FN)tkerr("only a function can be called");
+			Ret rArg;
+			Symbol *param=s->fn.params;
 			if(consume(RPAR)){
 				return true;
 				}
-			if(expr()){
+			if(expr(&rArg)){
+				if(!param)tkerr("too many arguments in function call");
+				if(!convTo(&rArg.type,&param->type))tkerr("in call, cannot convert the argument type to the parameter type");
+				param=param->next;
 				while(consume(COMMA)){
-					if(expr()){
+					if(expr(&rArg)){
+						if(!param)tkerr("too many arguments in function call");
+						if(!convTo(&rArg.type,&param->type))tkerr("in call, cannot convert the argument type to the parameter type");
+						param=param->next;
 						continue;
 						} else tkerr("Missing function argument after ,");
 					iTk = start;
 					return false;
 					}
 				if(consume(RPAR)){
+					if(param)tkerr("too few arguments in function call");
+					*r=(Ret){s->type,false,true};
 					return true;
 					} else tkerr("Missing ) to end function call");
 				}
+			} else {
+				if(s->kind==SK_FN)tkerr("a function can only be called");
+				*r=(Ret){s->type,true,s->type.n>=0};
 			}
 		return true;
 		}
 	iTk = start;
-	if(consume(INT) || consume(DOUBLE) || consume(CHAR) || consume(STRING)){
+	if(consume(INT)) {
+		*r=(Ret){{TB_INT,NULL,-1},false,true};
 		return true;
-		}
+	}
+	if (consume(DOUBLE)) {
+		*r=(Ret){{TB_DOUBLE,NULL,-1},false,true};
+		return true;
+	}
+	if (consume(CHAR)) {
+		*r=(Ret){{TB_CHAR,NULL,-1},false,true};
+		return true;
+	}
+	if (consume(STRING)) {
+		*r=(Ret){{TB_CHAR,NULL,0},false,true};
+		return true;
+	}
+
 	if(consume(LPAR)){
-		if(expr()){
+		if(expr(r)){
 			if(consume(RPAR)){
 				return true;
 				} else tkerr("Missing ) after expression");
@@ -78,13 +110,20 @@ bool exprPrimary() {
 // exprPostfix: exprPostfix LBRACKET expr RBRACKET | exprPostfix DOT ID | exprPrimary
 // transformed into exprPostfix: exprPrimary exprPostfixPrim, exprPostfixPrim: (LBRACKET expr RBRACKET exprPostfixPrim | DOT ID exprPostfixPrim)?
 
-bool exprPostfixPrim() {
+bool exprPostfixPrim(Ret* r) {
 	printf("#exprPostfixPrim %s\n",tkCode(iTk->code));
 	Token* start = iTk;
 	if(consume(LBRACKET)){
-		if(expr()){
+		Ret idx;
+		if(expr(&idx)){
 			if(consume(RBRACKET)){
-				if(exprPostfixPrim()){
+				if(r->type.n<0)tkerr("only an array can be indexed");
+				Type tInt={TB_INT,NULL,-1};
+				if(!convTo(&idx.type,&tInt))tkerr("the index is not convertible to int");
+				r->type.n=-1;
+				r->lval=true;
+				r->ct=false;
+				if(exprPostfixPrim(r)){
 					return true;
 					}
 				} else tkerr("Missing ] after expression");
@@ -93,7 +132,12 @@ bool exprPostfixPrim() {
 	iTk = start;
 	if(consume(DOT)){
 		if(consume(ID)){
-			if(exprPostfixPrim()){
+			Token* tkName = consumedTk;
+			if(r->type.tb!=TB_STRUCT)tkerr("a field can only be selected from a struct");
+			Symbol *s=findSymbolInList(r->type.s->structMembers,tkName->text);
+			if(!s)tkerr("the structure %s does not have a field %s",r->type.s->name,tkName->text);
+			*r=(Ret){s->type,true,s->type.n>=0};
+			if(exprPostfixPrim(r)){
 				return true;
 				}
 			} else tkerr("Missing struct attribute after .");
@@ -101,11 +145,11 @@ bool exprPostfixPrim() {
 	return true;
 }
 
-bool exprPostfix() {
+bool exprPostfix(Ret* r) {
 	printf("#exprPostfix %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprPrimary()){
-		if(exprPostfixPrim()){
+	if(exprPrimary(r)){
+		if(exprPostfixPrim(r)){
 			return true;
 			}
 		}
@@ -115,11 +159,14 @@ bool exprPostfix() {
 
 // exprUnary: ( SUB | NOT ) exprUnary | exprPostfix
 
-bool exprUnary() {
+bool exprUnary(Ret* r) {
 	printf("#exprUnary %s\n", tkCode(iTk->code));
 	Token* start = iTk;
 	if(consume(SUB) || consume(NOT)){
-		if(exprUnary()){
+		if(exprUnary(r)){
+			if(!canBeScalar(r))tkerr("unary - or ! must have a scalar operand");
+			r->lval=false;
+			r->ct=true;
 			return true;
 			} else {
 				iTk = start;
@@ -127,7 +174,7 @@ bool exprUnary() {
 			}
 		}
 	iTk = start;
-	if (exprPostfix()) {
+	if (exprPostfix(r)) {
 		return true;
 	}
 	iTk = start;
@@ -136,22 +183,28 @@ bool exprUnary() {
 
 // exprCast: LPAR typeBase arrayDecl? RPAR exprCast | exprUnary
 
-bool exprCast() {
+bool exprCast(Ret* r) {
 	printf("#exprCast %s\n", tkCode(iTk->code));
 	Token* start = iTk;
 	Type t;
 	if(consume(LPAR)){
+		Ret op;
 		if(typeBase(&t)){
 			if(arrayDecl(&t)){}
 				if(consume(RPAR)){
-					if(exprCast()){
+					if(exprCast(&op)){
+						if(t.tb==TB_STRUCT)tkerr("cannot convert to a struct type");
+						if(op.type.tb==TB_STRUCT)tkerr("cannot convert a struct");
+						if(op.type.n>=0&&t.n<0)tkerr("an array can be converted only to another array");
+						if(op.type.n<0&&t.n>=0)tkerr("a scalar can be converted only to another scalar");
+						*r=(Ret){t,false,true};
 						return true;
 						} else tkerr("Missing expression after cast");
 					} else tkerr("Missing ) after type");
 			}
 		}
 	iTk = start;
-	if ( exprUnary() ) {
+	if ( exprUnary(r) ) {
 		return true;
 	}
 	iTk = start;
@@ -161,12 +214,16 @@ bool exprCast() {
 // exprMul: exprMul ( MUL | DIV ) exprCast | exprCast
 // transformed into exprMul: exprCast exprMulPrim, exprMulPrim: ((MUL | DIV) exprCast exprMulPrim)?
 
-bool exprMulPrim() {
+bool exprMulPrim(Ret* r) {
 	printf("#exprMulPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(MUL) || consume(DIV)){
-		if(exprCast()){
-			if(exprMulPrim()){
+		if(exprCast(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for * or /");
+			*r=(Ret){tDst,false,true};
+			if(exprMulPrim(r)){
 				return true;
 				}
 			} else {
@@ -179,11 +236,11 @@ bool exprMulPrim() {
 	return true;
 }
 
-bool exprMul() {
+bool exprMul(Ret* r) {
 	printf("#exprMul %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprCast()){
-		if(exprMulPrim()){
+	if(exprCast(r)){
+		if(exprMulPrim(r)){
 			return true;
 			}
 		}
@@ -194,12 +251,16 @@ bool exprMul() {
 // exprAdd: exprAdd ( ADD | SUB ) exprMul | exprMul
 // transformed into exprAdd: exprMul exprAddPrim, exprAddPrim: ((ADD | SUB) exprMul exprAddPrim)?
 
-bool exprAddPrim() {
+bool exprAddPrim(Ret* r) {
 	printf("#exprAddPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(ADD) || consume(SUB)){
-		if(exprMul()){
-			if(exprAddPrim()){
+		if(exprMul(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for + or -");
+			*r=(Ret){tDst,false,true};
+			if(exprAddPrim(r)){
 				return true;
 				}
 			} else {
@@ -212,11 +273,11 @@ bool exprAddPrim() {
 	return true;
 }
 
-bool exprAdd() {
+bool exprAdd(Ret* r) {
 	printf("#exprADd %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprMul()){
-		if(exprAddPrim()){
+	if(exprMul(r)){
+		if(exprAddPrim(r)){
 			return true;
 			}
 		}
@@ -227,12 +288,16 @@ bool exprAdd() {
 // exprRel: exprRel ( LESS | LESSEQ | GREATER | GREATEREQ ) exprAdd | exprAdd
 // transformed into exprRel: exprAdd exprRelPrim, exprRelPrim: ((LESS | LESSEQ | GREATER | GREATEREQ) exprAdd exprRelPrim)?
 
-bool exprRelPrim() {
+bool exprRelPrim(Ret* r) {
 	printf("#exprRelPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(LESS) || consume(LESSEQ) || consume(GREATER) || consume(GREATEREQ)){
-		if(exprAdd()){
-			if(exprRelPrim()){
+		if(exprAdd(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for <, <=, >, >=");
+			*r=(Ret){{TB_INT,NULL,-1},false,true};
+			if(exprRelPrim(r)){
 				return true;
 				}
 			} else {
@@ -247,11 +312,11 @@ bool exprRelPrim() {
 	return true;
 }
 
-bool exprRel() {
+bool exprRel(Ret* r) {
 	printf("#exprRel %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprAdd()){
-		if(exprRelPrim()){
+	if(exprAdd(r)){
+		if(exprRelPrim(r)){
 			return true;
 			}
 		}
@@ -263,12 +328,16 @@ bool exprRel() {
 // exprEq: exprEq ( EQUAL | NOTEQ ) exprRel | exprRel
 // transformed into exprEq: exprRel exprEqPrim, exprEqPrim: ((EQUAL | NOTEQ) exprRel exprEqPrim)?
 
-bool exprEqPrim() {
+bool exprEqPrim(Ret* r) {
 	printf("#exprEqPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(EQUAL) || consume(NOTEQ)){
-		if(exprRel()){
-			if(exprEqPrim()){
+		if(exprRel(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for == or !=");
+			*r=(Ret){{TB_INT,NULL,-1},false,true};
+			if(exprEqPrim(r)){
 				return true;
 				}
 			} else tkerr("Missing expression after == or !=");
@@ -277,11 +346,11 @@ bool exprEqPrim() {
 	return true;
 }
 
-bool exprEq(){
+bool exprEq(Ret* r){
 	printf("#exprEq %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprRel()){
-		if(exprEqPrim()){
+	if(exprRel(r)){
+		if(exprEqPrim(r)){
 			return true;
 			}
 		}
@@ -293,12 +362,16 @@ bool exprEq(){
 // exprAnd: exprAnd AND exprEq | exprEq
 // transformed into exprAnd: exprEq exprAndPrim, exprAndPrim: (AND exprEq exprAndPrim)?
 
-bool exprAndPrim() {
+bool exprAndPrim(Ret* r) {
 	printf("#exprAndPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(AND)){
-		if(exprEq()){
-			if(exprAndPrim()){
+		if(exprEq(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for &&");
+			*r=(Ret){{TB_INT,NULL,-1},false,true};
+			if(exprAndPrim(r)){
 				return true;
 				}
 			} else tkerr("Missing expression after &&");
@@ -307,11 +380,11 @@ bool exprAndPrim() {
 	return true;
 }
 
-bool exprAnd(){
+bool exprAnd(Ret* r){
 	printf("#exprAnd %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprEq()){
-		if(exprAndPrim()){
+	if(exprEq(r)){
+		if(exprAndPrim(r)){
 			return true;
 			}
 		}
@@ -322,12 +395,16 @@ bool exprAnd(){
 // exprOr: exprOr OR exprAnd | exprAnd
 // transformed into exprOr: exprAnd exprOrPrim, exprOrPrim: (OR exprAnd exprOrPrim)?
 
-bool exprOrPrim() {
+bool exprOrPrim(Ret* r) {
 	printf("#exprOrPrim %s\n", tkCode(iTk->code));
+	Ret right;
 	Token* start = iTk;
 	if(consume(OR)){
-		if(exprAnd()){
-			if(exprOrPrim()){
+		if(exprAnd(&right)){
+			Type tDst;
+			if(!arithTypeTo(&r->type,&right.type,&tDst))tkerr("invalid operand type for ||");
+			*r=(Ret){{TB_INT,NULL,-1},false,true};
+			if(exprOrPrim(r)){
 				return true;
 				}
 			} else tkerr("Missing expression after ||");
@@ -336,11 +413,11 @@ bool exprOrPrim() {
 	return true;
 }
 
-bool exprOr(){
+bool exprOr(Ret* r){
 	printf("#exprOr %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprAnd()){
-		if(exprOrPrim()){
+	if(exprAnd(r)){
+		if(exprOrPrim(r)){
 			return true;
 			}
 		}
@@ -350,18 +427,26 @@ bool exprOr(){
 
 // exprAssign: exprUnary ASSIGN exprAssign | exprOr
 
-bool exprAssign(){
+bool exprAssign(Ret* r){
 	printf("#exprAssign %s\n", tkCode(iTk->code));
+	Ret rDst;
 	Token* start = iTk;
-	if(exprOr()){
+	if(exprUnary(&rDst)){
 		if(consume(ASSIGN)){
-			if(exprAssign()){
+			if(exprAssign(r)){
+				if(!rDst.lval)tkerr("the assign destination must be a left-value");
+				if(rDst.ct)tkerr("the assign destination cannot be constant");
+				if(!canBeScalar(&rDst))tkerr("the assign destination must be scalar");
+				if(!canBeScalar(r))tkerr("the assign source must be scalar");
+				if(!convTo(&r->type,&rDst.type))tkerr("the assign source cannot be converted to destination");
+				r->lval=false;
+				r->ct=true;
 				return true;
 				} else tkerr("Missing expression after =");
 			}
 		}
 	iTk = start;
-	if (exprOr()){
+	if (exprOr(r)){
 		return true;
 		}
 	return false;
@@ -370,10 +455,10 @@ bool exprAssign(){
 
 // expr: exprAssign
 
-bool expr(){
+bool expr(Ret* r){
 	printf("#expr %s\n", tkCode(iTk->code));
 	Token* start = iTk;
-	if(exprAssign()){
+	if(exprAssign(r)){
 		return true;
 		}
 	iTk = start;
@@ -401,13 +486,15 @@ bool stmCompound(bool newDomain){
 
 bool stm(){
 	printf("#stm %s\n", tkCode(iTk->code));
+	Ret rCond, rExpr;
 	Token* start = iTk;
 	if(stmCompound(true)){
 		return true;
 		}
 	if(consume(IF)){
 		if(consume(LPAR)){
-			if(expr()){
+			if(expr(&rCond)){
+				if(!canBeScalar(&rCond))tkerr("the if condition must be a scalar value");
 				if(consume(RPAR)){
 					if(stm()){
 						if(consume(ELSE)){
@@ -425,7 +512,8 @@ bool stm(){
 	iTk = start;
 	if(consume(WHILE)){
 		if(consume(LPAR)){
-			if(expr()){
+			if(expr(&rCond)){
+				if(!canBeScalar(&rCond))tkerr("the while condition must be a scalar value");
 				if(consume(RPAR)){
 					if(stm()){
 						return true;
@@ -436,13 +524,19 @@ bool stm(){
 		}
 	iTk = start;
 	if(consume(RETURN)){
-		expr();
+		if (expr(&rExpr)) {
+			if(owner->type.tb==TB_VOID)tkerr("a void function cannot return a value");
+			if(!canBeScalar(&rExpr))tkerr("the return value must be a scalar value");
+			if(!convTo(&rExpr.type,&owner->type))tkerr("cannot convert the return expression type to the function return type");
+		} else {
+			if(owner->type.tb!=TB_VOID)tkerr("a non-void function must return a value");
+		}
 		if(consume(SEMICOLON)){
 			return true;
 			} else tkerr("Missing ; after return");
 		}
 	iTk = start;
-	if (expr()) {
+	if (expr(&rExpr)) {
 		if (consume(SEMICOLON)) {
 			return true;
 			} else tkerr("Missing ; after expression");

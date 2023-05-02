@@ -6,7 +6,7 @@
 #include "parser/ad.h"
 
 int main(int argc, char* argv[]) {
-    char *inbuf = loadFile("tests/testad.c");
+    char *inbuf = loadFile("tests/testat.c");
     Token* tokens = tokenize(inbuf);
     showTokens(tokens);
     pushDomain();
