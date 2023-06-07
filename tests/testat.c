@@ -4,7 +4,7 @@ struct S{
 	};
 	
 struct S a;
-struct S v[10];
+struct S v[2];
 
 void f(char text[],int i,char ch){
 	text[i]=1;

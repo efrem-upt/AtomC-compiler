@@ -1,5 +1,7 @@
 #pragma once
 
+#include "vm.h"
+
 // the domain analysis
 
 struct Symbol;typedef struct Symbol Symbol;
@@ -50,6 +52,8 @@ struct Symbol{
 		struct{
 			Symbol *params;		// the parameters of a function
 			Symbol *locals;		// all local vars of a function, including the ones from its inner domains
+			void(*extFnPtr)();		// !=NULL for extern functions
+			Instr *instr;		// used if extFnPtr==NULL
 			}fn;
 		};
 	};
@@ -88,3 +92,10 @@ Symbol *findSymbol(const char *name);
 // adds a symbol to the current domain
 Symbol *addSymbolToDomain(Domain *d,Symbol *s);
 
+// add in ST an extern function with the given name, address and return type
+Symbol *addExtFn(const char *name,void(*extFnPtr)(),Type ret);
+
+// add to fn a parameter with the given name and type
+// it doesn't verify for parameter redefinition
+// returns the added parameter
+Symbol *addFnParam(Symbol *fn,const char *name,Type type);

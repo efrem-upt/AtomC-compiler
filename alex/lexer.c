@@ -240,6 +240,8 @@ void showTokens(const Token *tokens) {
 			case EQUAL:printf("EQUAL");break;
 			case LESS:printf("LESS");break;
 			case LESSEQ:printf("LESSEQ");break;
+			case GREATER:printf("GREATER");break;
+			case GREATEREQ:printf("GREATEREQ");break;
 			case TYPE_CHAR:printf("TYPE_CHAR");break;
 			case TYPE_INT:printf("TYPE_INT");break;
 			case TYPE_DOUBLE:printf("TYPE_DOUBLE");break;
@@ -253,6 +255,7 @@ void showTokens(const Token *tokens) {
 			case INT:printf("INT: %d",tk->i);break;
 			case DOUBLE:printf("DOUBLE: %g",tk->d);break;
 			case STRING:printf("STRING: %s",tk->text);break;
+			case VOID: printf("VOID");break;
 			default:printf("UNKNOWN: %d",tk->code);break;
 		}
 		printf("\n");
